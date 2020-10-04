@@ -30,32 +30,31 @@ def close_connection():
         return True
 
     except IOError as e:
-        Print("Error: ", e)
+        print("Error: ", e)
         return False
 
 
 def send_request_to_server(request):
     global client_socket
+    request += "\n"
 
     try:
-        client_socket.send(request.encode())
+        bytes_sent = 0
+        while bytes_sent < len(request.encode()):
+            bytes_sent += client_socket.send(request[bytes_sent:].encode())
+            if bytes_sent == 0:
+                raise IOError("Could not send request")
         return True
 
     except IOError as e:
-        Print("Error: ", e)
+        print("Error: ", e)
         return False
 
 
 def read_response_from_server():
-    """
-    Wait for one response from the remote server.
-    :return: The response received from the server, None on error. The newline character is stripped away
-     (not included in the returned value).
-    """
-    # The "global" keyword is needed so that this function refers to the globally defined client_socket variable
     global client_socket
 
-    return None
+    return client_socket.recv(1024).decode()
 
 
 def run_client_tests():
@@ -83,7 +82,7 @@ def run_client_tests():
     print("Server responded with: ", response)
     seconds_to_sleep = 2 + random.randint(0, 5)
     print("Sleeping %i seconds to allow simulate long client-server connection..." % seconds_to_sleep)
-    time.sleep(seconds_to_sleep * 1000)
+    time.sleep(seconds_to_sleep)
 
     request = "bla+bla"
     if not send_request_to_server(request):
