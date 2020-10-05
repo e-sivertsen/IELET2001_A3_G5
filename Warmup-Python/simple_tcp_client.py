@@ -2,8 +2,8 @@ import random
 import time
 from socket import *
 
-HOST = "datakomm.work"
-PORT = 1301
+HOST = "localhost"
+PORT = 1300
 
 client_socket = None
 
@@ -93,6 +93,8 @@ def run_client_tests():
     if response is None:
         return "ERROR: Failed to receive server's response!"
 
+    input()
+
     print("Server responded with: ", response)
     if not (send_request_to_server("game over") and close_connection()):
         return "ERROR: Could not finish the conversation with the server"
@@ -110,3 +112,4 @@ def run_client_tests():
 if __name__ == '__main__':
     result = run_client_tests()
     print(result)
+    input()
