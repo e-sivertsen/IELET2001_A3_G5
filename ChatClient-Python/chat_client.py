@@ -168,6 +168,7 @@ def get_joke():
 def recieve_async():
     while True:
         data = get_servers_response()
+        if data is None: return
         command = data.split(' ')[0]
         if command == "privmsg" or command == "msg":
             msg_type = "public"
@@ -186,7 +187,7 @@ def async_mode():
         print('Type "public <message>" to send a public message')
         print('Type "private <user> <message>" to send a private message')
         print('Type "exit" to exit chat mode\n')
-        while True:
+        while client_socket.fileno() != -1:
             user_input = input()
             command = user_input.split(' ')[0].lower()
             if command == "exit":
