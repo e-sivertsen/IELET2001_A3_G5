@@ -1,66 +1,48 @@
-#################################################################################
-# A Chat Client application. Used in the course IELEx2001 Computer networks, NTNU
-#################################################################################
-
+import threading
+import select
 from socket import *
 
-
-# --------------------
-# Constants
-# --------------------
-# The states that the application can be in
 states = [
-    "disconnected",  # Connection to a chat server is not established
-    "connected",  # Connected to a chat server, but not authorized (not logged in)
-    "authorized"  # Connected and authorized (logged in)
+    "disconnected",
+    "connected",
+    "authorized"
 ]
-TCP_PORT = 1300  # TCP port used for communication
-SERVER_HOST = "localhost"  # Set this to either hostname (domain) or IP address of the chat server
+TCP_PORT = 1300
+SERVER_HOST = "datakomm.work"
+current_state = "disconnected"
 
-# --------------------
-# State variables
-# --------------------
-current_state = "disconnected"  # The current state of the system
-# When this variable will be set to false, the application will stop
 must_run = True
-# Use this variable to create socket connection to the chat server
-# Note: the "type: socket" is a hint to PyCharm about the type of values we will assign to the variable
-client_socket = None  # type: socket
+client_socket = None
 
 
 def quit_application():
-    """ Update the application state so that the main-loop will exit """
-    # Make sure we reference the global variable here. Not the best code style,
-    # but the easiest to work with without involving object-oriented code
     global must_run
     must_run = False
 
 
 def send_command(command, arguments):
-    """
-    Send one command to the chat server.
-    :param command: The command to send (login, sync, msg, ...(
-    :param arguments: The arguments for the command as a string, or None if no arguments are needed
-        (username, message text, etc)
-    :return:
-    """
     global client_socket
-    # TODO: Implement this (part of step 3)
-    # Hint: concatenate the command and the arguments
-    # Hint: remember to send the newline at the end
-    pass
+    payload = ("%s %s\n" %(command, arguments)).encode()
+    try:
+        bytes_sent = 0
+        while bytes_sent < len(payload):
+            bytes_sent += client_socket.send(payload[bytes_sent:])
+            if bytes_sent == 0:
+                raise IOError("Could not send request")
+        return True
+    except IOError as e:
+        print("Error: ", e)
+        return False
+
 
 
 def read_one_line(sock):
-    """
-    Read one line of text from a socket
-    :param sock: The socket to read from.
-    :return:
-    """
     newline_received = False
     message = ""
     while not newline_received:
-        character = sock.recv(1).decode()
+        try:
+            character = sock.recv(1).decode()
+        except UnicodeDecodeError: character = u'\u2610';	
         if character == '\n':
             newline_received = True
         elif character == '\r':
@@ -71,53 +53,152 @@ def read_one_line(sock):
 
 
 def get_servers_response():
-    """
-    Wait until a response command is received from the server
-    :return: The response of the server, the whole line as a single string
-    """
-    # TODO Step 4: implement this function
-    # Hint: reuse read_one_line (copied from the tutorial-code)
-    return None
+    global client_socket
+    try:
+        response = read_one_line(client_socket)
+        return response
+    except IOError as e:
+        print("Error:", e)
+        return None
 
 
 def connect_to_server():
-    # Must have these two lines, otherwise the function will not "see" the global variables that we will change here
     global client_socket
     global current_state
-
-    # TODO Step 1: implement connection establishment
-    # Hint: create a socket, connect, handle exceptions, then change current_state accordingly
-
-    # TODO Step 3: switch to sync mode
-    # Hint: send the sync command according to the protocol
-    # Hint: create function send_command(command, arguments) which you will use to send this and all other commands
-    # to the server
-
-    # TODO Step 4: wait for the servers response and find out whether the switch to SYNC mode was successful
-    # Hint: implement the get_servers_response function first - it should wait for one response command from the server
-    # and return the server's response (we expect "modeok" response here). This get_servers_response() function
-    # will come in handy later as well - when we will want to check the server's response to login, messages etc
-    print("CONNECTION NOT IMPLEMENTED!")
+    global TCP_PORT
+    global SERVER_HOST
+    client_socket = socket(AF_INET, SOCK_STREAM)
+    try:
+        client_socket.connect((SERVER_HOST, TCP_PORT))
+    except IOError as e:
+        print("Error: ", e)
+        return False
+    current_state = "connected"
+    send_command("sync","")
+    if get_servers_response() != "modeok":
+        print("Error: could not set sync mode")
 
 
 def disconnect_from_server():
-    # TODO Step 2: Implement disconnect
-    # Hint: close the socket, handle exceptions, update current_state accordingly
-
-    # Must have these two lines, otherwise the function will not "see" the global variables that we will change here
     global client_socket
     global current_state
-    pass
+    try:
+        client_socket.close()
+        current_state = "disconnected"
+        return True
+    except IOError as e:
+        print("Error: ", e)
+        return False
+
+def authorize():
+    global current_state
+    print("Enter displayname: ")
+    while True:
+        displayname = input()
+        if send_command("login", displayname):
+            response = get_servers_response()
+            if response == "loginok":
+                current_state = "authorized"
+                print("Display name set to:", displayname)
+                return
+            elif not response: return
+            else:
+                 print("Displayname already in use, please enter another displayname: ")
+        else: return
+
+def broadcast():
+    print("Enter message to broadcast to all users:")
+    message = input().replace('\n','')
+    if send_command("msg", message):
+        response = get_servers_response()
+        if "msgok" in response:
+            print("Message successfully sent to %s people" %response.split(' ')[1])
+        else: print("Error:", response)
 
 
-"""
-The list of available actions that the user can perform
-Each action is a dictionary with the following fields:
-description: a textual description of the action
-valid_states: a list specifying in which states this action is available
-function: a function to call when the user chooses this particular action. The functions must be defined before
-            the definition of this variable
-"""
+def private_msg():
+    print("Enter username of reccipient: ")
+    target = input().replace('\n','')
+    print("\nEnter message text:")
+    message = input().replace('\n','')
+    if send_command("privmsg", "%s %s" %(target, message)):
+        response = get_servers_response()
+        if "msgok" in response: print("\nSent message to", target)
+        else: print("\nError:", response)
+
+
+def print_columns(l, columns):
+    width = 0
+    for item in l: width = max(width, len(item))
+    count = 0
+    for item in l:
+        if count == columns:
+            print(item)
+            count = 0
+        else:
+            while len(item) < width: item += " "
+            print(item, end="   ")
+            count += 1
+
+
+def get_users():
+    if send_command("users",""):
+        response = get_servers_response()
+        response = response.split(' ')
+        response.pop(0)
+        print("Users currently on server:")
+        print_columns(response, 4)
+
+def get_messages():
+    if send_command("inbox",""):
+        response = get_servers_response().split(' ')
+        print("New messages:", response[1])
+        for _ in range(0, int(response[1])):
+            message = get_servers_response()
+            sender = message.split(' ')[1]
+            if "privmsg" in message: print("%s(private):" %sender)
+            else: print("%s(public):" %sender)
+            print(message[message.find(sender) + len(sender) + 1:], "\n")
+
+
+def get_joke():
+    if send_command("joke", ""): print(get_servers_response()[5:])
+
+
+def recieve_async():
+    while True:
+        data = get_servers_response()
+        command = data.split(' ')[0]
+        if command == "privmsg" or command == "msg":
+            msg_type = "public"
+            if command == "privmsg": msg_type = "private"
+            sender = data.split(' ')[1]
+            print("%s(%s): %s\n" %(sender, msg_type, data[data.find(sender) + len(sender) + 1:]))
+        elif command == "msgok": pass
+        elif "modeok" in data: return
+        else: print(data,"\n")
+
+
+def async_mode():
+    if send_command("async", "") and "modeok" in get_servers_response():
+        reciever_thread = threading.Thread(target=recieve_async)
+        reciever_thread.start()
+        print('Type "public <message>" to send a public message')
+        print('Type "private <user> <message>" to send a private message')
+        print('Type "exit" to exit chat mode\n')
+        while True:
+            user_input = input()
+            command = user_input.split(' ')[0].lower()
+            if command == "exit":
+                if send_command("sync",""):
+                    reciever_thread.join()
+                    return
+            elif command == "public" and len(user_input.split(' ')) >= 2: send_command("msg", user_input[7:])
+            elif command == "private" and len(user_input.split(' ')) >= 3: send_command("privmsg", user_input[8:])
+            else: print("Error: invalid command")
+            print()
+
+
 available_actions = [
     {
         "description": "Connect to a chat server",
@@ -132,73 +213,47 @@ available_actions = [
     {
         "description": "Authorize (log in)",
         "valid_states": ["connected", "authorized"],
-        # TODO Step 5 - implement login
-        # Hint: you will probably want to create a new function (call it login(), or authorize()) and
-        # reference that function here.
-        # Hint: you can ask the user to enter the username with input("Enter username: ") function.
-        # Hint: the login function must be above this line, otherwise the available_actions will complain that it can't
-        # find the function
-        # Hint: you can reuse the send_command() function to send the "login" command
-        # Hint: you probably want to change the state of the system: update value of current_state variable
-        # Hint: remember to tell the function that you will want to use the global variable "current_state".
-        # Hint: if the login was unsuccessful (loginerr returned), show the error message to the user
-        "function": None
+        "function": authorize
     },
     {
         "description": "Send a public message",
         "valid_states": ["connected", "authorized"],
-        # TODO Step 6 - implement sending a public message
-        # Hint: ask the user to input the message from the keyboard
-        # Hint: you can reuse the send_command() function to send the "msg" command
-        # Hint: remember to read the server's response: whether the message was successfully sent or not
-        "function": None
+        "function": broadcast
     },
     {
         "description": "Send a private message",
         "valid_states": ["authorized"],
-        # TODO Step 8 - implement sending a private message
-        # Hint: ask the user to input the recipient and message from the keyboard
-        # Hint: you can reuse the send_command() function to send the "privmsg" command
-        # Hint: remember to read the server's response: whether the message was successfully sent or not
-        "function": None
+        "function": private_msg
     },
     {
         "description": "Read messages in the inbox",
         "valid_states": ["connected", "authorized"],
-        # TODO Step 9 - implement reading messages from the inbox.
-        # Hint: send the inbox command, find out how many messages there are. Then parse messages
-        # one by one: find if it is a private or public message, who is the sender. Print this
-        # information in a user friendly way
-        "function": None
+        "function": get_messages
     },
     {
         "description": "See list of users",
         "valid_states": ["connected", "authorized"],
-        # TODO Step 7 - Implement getting the list of currently connected users
-        # Hint: use the provided chat client tools and analyze traffic with Wireshark to find out how
-        # the user list is reported. Then implement a function which gets the user list from the server
-        # and prints the list of usernames
-        "function": None
+        "function": get_users
     },
     {
         "description": "Get a joke",
         "valid_states": ["connected", "authorized"],
-        # TODO - optional step - implement the joke fetching from the server.
-        # Hint: this part is not described in the protocol. But the command is simple. Try to find
-        # out how it works ;)
-        "function": None
+        "function": get_joke
     },
     {
         "description": "Quit the application",
         "valid_states": ["disconnected", "connected", "authorized"],
         "function": quit_application
     },
+    {
+        "description": "Chat mode",
+        "valid_states": ["connected", "authorized"],
+        "function": async_mode
+    },
 ]
 
 
 def run_chat_client():
-    """ Run the chat client application loop. When this function exists, the application will stop """
-
     while must_run:
         print_menu()
         action = select_user_action()
@@ -215,40 +270,27 @@ def print_menu():
     i = 1
     for a in available_actions:
         if current_state in a["valid_states"]:
-            # Only hint about the action if the current state allows it
             print("  %i) %s" % (i, a["description"]))
         i += 1
     print()
 
 
 def select_user_action():
-    """
-    Ask the user to choose and action by entering the index of the action
-    :return: The action as an index in available_actions array or None if the input was invalid
-    """
     number_of_actions = len(available_actions)
     hint = "Enter the number of your choice (1..%i):" % number_of_actions
     choice = input(hint)
-    # Try to convert the input to an integer
     try:
         choice_int = int(choice)
     except ValueError:
         choice_int = -1
-
     if 1 <= choice_int <= number_of_actions:
         action = choice_int - 1
     else:
         action = None
-
     return action
 
 
 def perform_user_action(action_index):
-    """
-    Perform the desired user action
-    :param action_index: The index in available_actions array - the action to take
-    :return: Desired state change as a string, None if no state change is needed
-    """
     if action_index is not None:
         print()
         action = available_actions[action_index]
@@ -265,7 +307,5 @@ def perform_user_action(action_index):
     print()
     return None
 
-# Entrypoint for the application. In PyCharm you should see a green arrow on the left side.
-# By clicking it you run the application.
 if __name__ == '__main__':
     run_chat_client()
