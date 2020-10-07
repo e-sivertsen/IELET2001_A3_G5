@@ -1,5 +1,4 @@
 import threading
-import select
 from socket import *
 
 states = [
@@ -10,7 +9,6 @@ states = [
 TCP_PORT = 1300
 SERVER_HOST = "datakomm.work"
 current_state = "disconnected"
-
 must_run = True
 client_socket = None
 
@@ -33,7 +31,6 @@ def send_command(command, arguments):
     except IOError as e:
         print("Error: ", e)
         return False
-
 
 
 def read_one_line(sock):
@@ -90,6 +87,7 @@ def disconnect_from_server():
         print("Error: ", e)
         return False
 
+
 def authorize():
     global current_state
     print("Enter displayname: ")
@@ -105,6 +103,7 @@ def authorize():
             else:
                  print("Displayname already in use, please enter another displayname: ")
         else: return
+
 
 def broadcast():
     print("Enter message to broadcast to all users:")
@@ -149,6 +148,7 @@ def get_users():
         print("Users currently on server:")
         print_columns(response, 4)
 
+
 def get_messages():
     if send_command("inbox",""):
         response = get_servers_response().split(' ')
@@ -176,7 +176,7 @@ def recieve_async():
             sender = data.split(' ')[1]
             print("%s(%s): %s\n" %(sender, msg_type, data[data.find(sender) + len(sender) + 1:]))
         elif command == "msgok": pass
-        elif "modeok" in data: return
+        elif command == "modeok": return
         else: print(data,"\n")
 
 
@@ -307,6 +307,7 @@ def perform_user_action(action_index):
         print("Invalid input, please choose a valid action")
     print()
     return None
+
 
 if __name__ == '__main__':
     run_chat_client()
